@@ -53,7 +53,109 @@ OPENAI_MODEL=gpt-5.2
 
 ---
 
-### 2. TUI 只是“可视化外壳”
+### 2. 推理模型与非推理模型的 Chat Template 差异 （可选阅读）
+
+在第二章中，我们介绍了 Chat Template 将 API 的结构化消息转换为模型输入文本的过程。但对于**推理模型**（Reasoning Models）和**非推理模型**（Standard Models），它们在 Chat Template 的使用上存在显著差异。
+
+#### 推理模型的特殊 Template 格式
+
+推理模型（如 OpenAI o1/o3 系列、DeepSeek-R1 等）需要特殊的 Prompt 结构来触发推理模式。它们的 Chat Template 通常包含：
+
+**1. 推理触发标记**
+推理模型需要特定的系统提示词或特殊格式来激活推理能力：
+
+```
+<thinking>
+请按照以下步骤思考问题：
+1. 理解用户需求
+2. 分析可用工具
+3. 规划执行步骤
+4. 逐步执行并验证
+</thinking>
+```
+
+**2. 推理过程与最终输出的分离**
+
+推理模型的 Chat Template 会将输出分为两个阶段：
+
+```
+<|im_start|>assistant
+
+根据 README.md 的内容，这个项目的目标是...
+<|im_end|>
+```
+
+API 响应中的 `reasoning_content` 字段对应 `<think>` 标签内的内容，而 `content` 字段对应最终输出。
+
+#### 不同模型的 Template 对比
+
+| 模型类型 | Template 特点 | 示例格式 |
+|---------|--------------|---------|
+| **标准模型**<br>(GPT-4, Claude-3) | 单阶段输出<br/>直接生成最终答案 | `<\|im_start\|>assistant\n答案是：42<\|im_end\|>` |
+| **推理模型**<br>(o1, o3, R1) | 双阶段输出<br/>先推理后答案 | `<\|im_start\|>assistant\n<think>...推理过程...</think>\n最终答案<\|im_end\|>` |
+| **混合模型**<br>(某些支持 reasoning 模式的模型) | 可选推理<br/>根据指令决定是否推理 | 根据系统指令决定是否生成 reasoning 字段 |
+
+#### 推理模型的 Token 消耗特点
+
+理解推理模型的 Chat Template 后，就能解释为什么推理模型的 Token 消耗更高：
+
+```
+标准模型对话：
+User (10 tokens) → Assistant (100 tokens)
+总计：110 tokens
+
+推理模型对话：
+User (10 tokens) → Assistant [thinking] (5000 tokens) → Assistant (100 tokens)
+总计：5110 tokens
+```
+
+推理模型的 `<think>` 内容通常会被计入**推理 Token（Reasoning Tokens）**，这部分可能有单独的计费标准。
+
+#### 实际开发中的处理策略
+
+**1. 自动适配不同模型**
+
+```go
+// 根据模型类型选择不同的系统提示词
+if isReasoningModel(modelName) {
+    systemPrompt = "你是一个推理型助手。请在 <think> 标签中展示思考过程。"
+} else {
+    systemPrompt = "你是一个直接的助手。请简洁回答问题。"
+}
+```
+
+**2. Template 解析的兼容性**
+
+```go
+// 解析流式响应时，需要区分 reasoning_content 和 content
+if chunk.ReasoningContent != nil {
+    // 推理模型：显示在推理区域
+    displayInThinkingArea(*chunk.ReasoningContent)
+}
+if chunk.Content != nil {
+    // 最终内容：显示在答案区域
+    displayInAnswerArea(*chunk.Content)
+}
+```
+
+**3. 成本优化建议**
+
+- **简单任务**使用标准模型，避免推理 Token 浪费
+- **复杂任务**才使用推理模型，充分利用其推理能力
+- 根据模型文档了解其推理 Token 计费规则
+
+#### 主流推理模型的 Template 差异
+
+| 模型系列 | Reasoning 字段名 | Template 特点 |
+|---------|-----------------|--------------|
+| **OpenAI o1/o3** | `reasoning_content` | 内置格式，无需特殊标签 |
+| **DeepSeek-R1** | `reasoning_content` | 兼容 OpenAI 格式 |
+| **自建推理模型** | 自定义字段 | 需根据文档调整解析逻辑 |
+
+---
+
+### 3. TUI 只是"可视化外壳"
+
 
 在 `ch03/tui/main.go` 中，使用 Bubble Tea 搭建了一个轻量的 TUI：
 

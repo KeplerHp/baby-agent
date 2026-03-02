@@ -28,7 +28,101 @@ OPENAI_MODEL=gpt-5.2
 
 ## 📖 核心原理解析
 
-### 1. 工具的“声明”就是一份函数签名
+### 0. Chat Template：从 API 到模型输入的桥梁（可选阅读）
+
+当我们调用 OpenAI API 时，发送的是结构化的 `messages` 数组（包含 `role` 和 `content`）。但大语言模型（LLM）的底层是一个**文本生成模型**，它只能理解和生成纯文本序列。
+
+**Chat Template** 就是将 API 的结构化消息转换为模型可理解文本格式的”翻译层”。
+
+#### 转换过程示例
+
+假设我们发送这样的 API 请求：
+
+```json
+{
+  “messages”: [
+    {“role”: “system”, “content”: “You are a helpful assistant.”},
+    {“role”: “user”, “content”: “What's the capital of France?”},
+    {“role”: “assistant”, “content”: “The capital of France is Paris.”},
+    {“role”: “user”, “content”: “Tell me more.”}
+  ]
+}
+```
+
+**Chat Template 会将其转换为类似这样的文本**：
+
+```text
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+What's the capital of France?<|im_end|>
+<|im_start|>assistant
+The capital of France is Paris.<|im_end|>
+<|im_start|>user
+Tell me more.<|im_end|>
+<|im_start|>assistant
+```
+
+#### 不同模型的 Template 格式
+
+不同模型使用不同的 Chat Template 格式：
+
+| 模型系列 | 格式示例 |
+|---------|---------|
+| **OpenAI (GPT)** | `<\|im_start\|>role\ncontent<\|im_end\|>` |
+| **Llama 2/3** | `[INST] instruction [/INST]` 或 `<|start_header_id|>role<|end_header_id|>` |
+| **Mistral** | `[INST] instruction [/INST]` |
+| **Qwen** | `<|im_start|>role\ncontent<|im_end|>` |
+| **ChatGLM** | `[Round 0]\n问：...\n答：...` |
+
+#### Tool Calling 的 Template 转换
+
+当涉及工具调用时，Chat Template 的转换更为关键。API 发送的工具定义和调用会被转换为特殊格式：
+
+**API 格式**：
+```json
+{
+  “tools”: [{“type”: “function”, “function”: {“name”: “get_weather”, “parameters”: {...}}}],
+  “messages”: [
+    {“role”: “user”, “content”: “What's the weather in Beijing?”},
+    {“role”: “assistant”, “tool_calls”: [{“id”: “call_123”, “function”: {“name”: “get_weather”, “arguments”: “{\”city\”: \”Beijing\”}”}}]},
+    {“role”: “tool”, “tool_call_id”: “call_123”, “content”: “Sunny, 25°C”}
+  ]
+}
+```
+
+**转换为模型输入**（简化示意）：
+```text
+<|im_start|>system
+You have access to the following functions:
+- get_weather: Get the current weather for a city
+
+<|im_start|>user
+What's the weather in Beijing?<|im_end|>
+<|im_start|>assistant
+<tool_call>[{“name”: “get_weather”, “arguments”: “{\”city\”: \”Beijing\”}”}]<tool_end><|im_end|>
+<|im_start|>tool
+Sunny, 25°C<|im_end|>
+<|im_start|>assistant
+```
+
+#### 为什么理解 Chat Template 很重要？
+
+1. **调试问题时**：当模型输出不符合预期，理解 template 帮助你判断是模型问题还是 prompt 格式问题
+2. **切换模型时**：不同模型的 template 不同，可能导致相同 prompt 表现不同
+3. **自定义 Prompt 时**：有时需要手动模拟 template 格式来绕过 API 限制
+4. **理解 Token 计算**：template 会额外消耗 token（如 `<|im_start|>` 等）
+
+#### 实际开发中的影响
+
+对于本章的 Function Calling：
+- SDK 会自动处理 Chat Template 转换
+- 你只需关注 API 层的 `messages` 和 `tools` 结构
+- 但理解转换原理有助于排查”为什么模型不调用工具”等问题
+
+---
+
+### 1. 工具的”声明”就是一份函数签名
 
 在 `ch02/tool/*.go` 中，每个工具都通过 `Info()` 返回一个 `FunctionDefinition`，告诉模型：
 
@@ -78,7 +172,7 @@ Function Calling 的本质是“外部能力的函数接口”，而 ReAct（Rea
 
 ---
 
-### 3. 本章实现的四个工具
+### 4. 本章实现的四个工具
 
 在 `ch02/tool/` 目录下：
 
