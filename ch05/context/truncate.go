@@ -34,7 +34,7 @@ func (s *TruncateStrategy) Apply(ctx context.Context, engine *ContextEngine) err
 	// 在 0 ~ toRemove - 1 中找到最后一次 User 消息，保留这个 User 之后的消息，截断之前所有的历史
 	removeIdx := toRemove - 1
 	for i := toRemove - 1; i >= 0; i-- {
-		role := engine.messages[i].GetRole()
+		role := engine.messages[i].Message.GetRole()
 		if role != nil && *role == "user" {
 			removeIdx = i
 			break
@@ -49,7 +49,7 @@ func (s *TruncateStrategy) Apply(ctx context.Context, engine *ContextEngine) err
 
 	removedTokens := 0
 	for i := 0; i < removeIdx; i++ {
-		removedTokens += CountTokens(engine.messages[i])
+		removedTokens += engine.messages[i].Tokens
 	}
 	engine.messages = engine.messages[removeIdx:]
 	engine.contextTokens -= removedTokens

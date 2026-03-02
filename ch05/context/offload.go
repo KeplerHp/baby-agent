@@ -42,7 +42,13 @@ func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 	offloadCount := len(engine.messages) - s.KeepRecentCount
 
 	for i := 0; i < offloadCount; i++ {
-		contentAny := engine.messages[i].GetContent().AsAny()
+		role := engine.messages[i].Message.GetRole()
+		// 只卸载 tool 类型
+		if role == nil || *role != "tool" {
+			continue
+		}
+
+		contentAny := engine.messages[i].Message.GetContent().AsAny()
 		contentStr, ok := contentAny.(*string)
 		if !ok {
 			continue
@@ -53,7 +59,7 @@ func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 		}
 
 		// 计算原始消息的 token 数
-		oldTokens := CountTokens(engine.messages[i])
+		oldTokens := engine.messages[i].Tokens
 
 		key := s.makeStorageKey(i)
 		if err := engine.storage.Store(ctx, key, *contentStr); err != nil {
@@ -70,21 +76,11 @@ func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 		newContent := b.String()
 
 		// 修改原始消息链中的消息
-		var newMessage openai.ChatCompletionMessageParamUnion
-		switch *engine.messages[i].GetRole() {
-		case "user":
-			newMessage = openai.UserMessage(newContent)
-		case "assistant":
-			newMessage = openai.AssistantMessage(newContent)
-		case "tool":
-			newMessage = openai.ToolMessage(newContent, *engine.messages[i].GetToolCallID())
-		default:
-			continue
-		}
+		newMessage := openai.ToolMessage(newContent, *engine.messages[i].Message.GetToolCallID())
 
 		// 计算新消息的 token 数并更新计数
 		newTokens := CountTokens(newMessage)
-		engine.messages[i] = newMessage
+		engine.messages[i] = messageWrap{Message: newMessage, Tokens: newTokens}
 		engine.contextTokens -= oldTokens - newTokens
 	}
 	return nil

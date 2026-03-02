@@ -56,7 +56,7 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 	// 计算被替换消息的总 token 数
 	removedTokens := 0
 	for i := 0; i < toSummaryIndex; i++ {
-		removedTokens += CountTokens(engine.messages[i])
+		removedTokens += engine.messages[i].Tokens
 	}
 
 	batchStart := 0
@@ -67,14 +67,14 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 
 		for i := batchStart; i < toSummaryIndex; i++ {
 			// 计算当前消息的 token 数
-			msgTokens := CountTokens(engine.messages[i])
+			msgTokens := engine.messages[i].Tokens
 
 			// 如果加上这条消息后超过阈值，且已经有消息了，则停止添加
 			if batchTokens+msgTokens > triggerThreshold && len(batchMessages) > 0 {
 				break
 			}
 
-			batchMessages = append(batchMessages, engine.messages[i])
+			batchMessages = append(batchMessages, engine.messages[i].Message)
 			batchTokens += msgTokens
 
 			// 达到 batch 数量，停止添加
@@ -102,13 +102,13 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 	}
 
 	// 构建新的消息列表
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(engine.messages))
-	summaryMessage := openai.UserMessage(accumulatedSummary)
-	messages = append(messages, summaryMessage)
-	messages = append(messages, engine.messages[toSummaryIndex:]...)
+	messages := make([]messageWrap, 0, len(engine.messages))
 
-	// 计算新摘要消息的 token 数
+	summaryMessage := openai.UserMessage(accumulatedSummary)
 	newTokens := CountTokens(summaryMessage)
+
+	messages = append(messages, messageWrap{Message: summaryMessage, Tokens: newTokens})
+	messages = append(messages, engine.messages[toSummaryIndex:]...)
 
 	// 更新消息列表和 token 计数
 	engine.messages = messages

@@ -21,7 +21,10 @@ func main() {
 	_ = godotenv.Load()
 
 	ctx := context.Background()
-	modelConf := shared.NewModelConfig()
+	appConf, err := shared.LoadAppConfig("config.json")
+	if err != nil {
+		log.Fatalf("Failed to config.json: %v", err)
+	}
 
 	mcpServerMap, err := shared.LoadMcpServerConfig("mcp-server.json")
 	if err != nil {
@@ -40,20 +43,22 @@ func main() {
 	// 创建上下文引擎和策略
 	store := storage.NewMemoryStorage()
 	strategies := []ctxengine.ContextStrategy{
-		ctxengine.NewTruncateStrategy(10, 5, 0.85),
+		ctxengine.NewOffloadStrategy(0.4, 0, 100, "msg"),
+		ctxengine.NewSummaryStrategy(appConf.LLMProviders.BackModel, 0, 200, 10, 0.6),
+		ctxengine.NewTruncateStrategy(0, 0, 0.85),
 	}
 	contextEngine := ctxengine.NewContextEngine(store, strategies)
 
 	agent := ch05.NewAgent(
-		modelConf,
+		appConf.LLMProviders.FrontModel,
 		ch05.CodingAgentSystemPrompt,
-		[]tool.Tool{tool.NewBashTool()},
+		[]tool.Tool{tool.NewBashTool(), tool.NewLoadStorageTool(storage.NewMemoryStorage())},
 		mcpClients,
 		contextEngine,
 	)
 
 	log.SetOutput(io.Discard)
-	p := tea.NewProgram(newModel(agent, modelConf.Model))
+	p := tea.NewProgram(newModel(agent, appConf.LLMProviders.FrontModel.Model))
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)
 	}

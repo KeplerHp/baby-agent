@@ -91,37 +91,13 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 	defer close(strategyCh)
 	a.contextEngine.SetStrategyEventChan(strategyCh)
 
-	// 启动 goroutine 转发策略事件到 viewCh
-	go func() {
-		for event := range strategyCh {
-			switch event.Type {
-			case ctxengine.StrategyEventStart:
-				viewCh <- MessageVO{
-					Type: MessageTypeStrategy,
-					Strategy: &StrategyVO{
-						Name:    event.Name,
-						Running: true,
-					},
-				}
-			case ctxengine.StrategyEventComplete:
-				viewCh <- MessageVO{
-					Type: MessageTypeStrategy,
-					Strategy: &StrategyVO{
-						Name:    event.Name,
-						Running: false,
-					},
-				}
-			}
-		}
-	}()
-
 	// 为本轮次创建新的消息链。这样如果流式过程中失败或者终止了，不会污染历史上下文。
 	messages := a.contextEngine.GetAllMessages()
 	messages = append(messages, openai.UserMessage(query))
 
 	// 记录开始时的消息数量（不含 system prompt），用于后续提交新消息
-	baseMessageCount := len(messages)
-
+	baseMessageCount := len(messages) - 1
+	var usage openai.CompletionUsage
 	for {
 		params := openai.ChatCompletionNewParams{
 			Model:    a.model,
@@ -162,11 +138,11 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 			}
 			return err
 		}
-
 		if len(acc.Choices) == 0 {
 			log.Printf("no choices returned, resp: %v", acc)
 			return nil
 		}
+		usage = acc.Usage
 		message := acc.Choices[0].Message
 		// 拼接 assistant message 到整体消息链中
 		messages = append(messages, message.ToParam())
@@ -206,6 +182,7 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 	// 轮次正常结束，agent 保存当前最新的消息链状态
 	// 批量添加本轮新增的消息（从 baseMessageCount 开始）
 	newMessages := messages[baseMessageCount:]
+	a.contextEngine.SetUsage(int(usage.TotalTokens))
 	a.contextEngine.AddMessages(ctx, newMessages)
 	return nil
 }

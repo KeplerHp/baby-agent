@@ -12,25 +12,26 @@ import (
 	"babyagent/ch05/storage"
 )
 
+type messageWrap struct {
+	Message openai.ChatCompletionMessageParamUnion
+	Tokens  int
+}
+
 type ContextEngine struct {
 	systemPromptTemplate string
-
-	storage storage.Storage
-
-	messages   []openai.ChatCompletionMessageParamUnion
-	strategies []ContextStrategy
-
-	contextTokens int
-	contextWindow int
-
-	strategyEventChan chan<- StrategyEvent // 策略执行事件通知 channel
+	storage              storage.Storage
+	messages             []messageWrap
+	strategies           []ContextStrategy
+	contextTokens        int
+	contextWindow        int
+	strategyEventChan    chan<- StrategyEvent // 策略执行事件通知 channel
 }
 
 func NewContextEngine(storage storage.Storage, strategies []ContextStrategy) *ContextEngine {
 	return &ContextEngine{
 		storage:           storage,
 		strategies:        strategies,
-		messages:          make([]openai.ChatCompletionMessageParamUnion, 0),
+		messages:          make([]messageWrap, 0),
 		contextWindow:     200000,
 		strategyEventChan: nil, // 默认为 nil，不发送事件
 	}
@@ -45,16 +46,27 @@ func (c *ContextEngine) GetContextUsage() float64 {
 	if c.contextWindow == 0 {
 		return 0
 	}
+	if c.contextTokens == 0 {
+		totalTokens := 0
+		for _, msg := range c.messages {
+			totalTokens += msg.Tokens
+		}
+		return float64(totalTokens) / float64(c.contextWindow)
+	}
 	return float64(c.contextTokens) / float64(c.contextWindow)
 }
 
 // AddMessages 批量添加消息，只应用一次策略
 func (c *ContextEngine) AddMessages(ctx context.Context, messages []openai.ChatCompletionMessageParamUnion) {
-	c.messages = append(c.messages, messages...)
 	for _, msg := range messages {
-		c.contextTokens += CountTokens(msg)
+		tokens := CountTokens(msg)
+		c.messages = append(c.messages, messageWrap{Message: msg, Tokens: tokens})
 	}
 	c.ApplyStrategies(ctx)
+}
+
+func (c *ContextEngine) SetUsage(promptTokens int) {
+	c.contextTokens = promptTokens
 }
 
 func (c *ContextEngine) ApplyStrategies(ctx context.Context) {
@@ -122,7 +134,9 @@ func (c *ContextEngine) SetContextWindow(window int) {
 // GetMessages 获取消息列表的副本（不含 system prompt）
 func (c *ContextEngine) GetMessages() []openai.ChatCompletionMessageParamUnion {
 	result := make([]openai.ChatCompletionMessageParamUnion, len(c.messages))
-	copy(result, c.messages)
+	for i, msg := range c.messages {
+		result[i] = msg.Message
+	}
 	return result
 }
 
@@ -133,12 +147,14 @@ func (c *ContextEngine) GetAllMessages() []openai.ChatCompletionMessageParamUnio
 	}
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(c.messages)+1)
 	result = append(result, openai.SystemMessage(c.GetSystemPrompt()))
-	result = append(result, c.messages...)
+	for i := range c.messages {
+		result = append(result, c.messages[i].Message)
+	}
 	return result
 }
 
 // Reset 清空所有消息（保留 system prompt）
 func (c *ContextEngine) Reset() {
-	c.messages = make([]openai.ChatCompletionMessageParamUnion, 0)
+	c.messages = make([]messageWrap, 0)
 	c.contextTokens = 0
 }
