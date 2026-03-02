@@ -5,57 +5,45 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"os"
-	"runtime"
-	"strings"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
 	"babyagent/ch05/tool"
 	"babyagent/shared"
+
+	ctxengine "babyagent/ch05/context"
 )
 
 type Agent struct {
-	systemPrompt string
-	model        string
-	client       openai.Client
-	messages     []openai.ChatCompletionMessageParamUnion
-	nativeTools  map[tool.AgentTool]tool.Tool // agent 框架中原生实现的 tools
-	mcpClients   map[string]*McpClient        // 集成 mcp 工具
+	model         string
+	client        openai.Client
+	contextEngine *ctxengine.ContextEngine
+	nativeTools   map[tool.AgentTool]tool.Tool
+	mcpClients    map[string]*McpClient
 }
 
-func NewAgent(modelConf shared.ModelConfig, systemPrompt string, tools []tool.Tool, mcpClients []*McpClient) *Agent {
+func NewAgent(modelConf shared.ModelConfig, systemPrompt string, tools []tool.Tool, mcpClients []*McpClient, contextEngine *ctxengine.ContextEngine) *Agent {
 	a := Agent{
-		systemPrompt: systemPrompt,
-		model:        modelConf.Model,
-		client:       openai.NewClient(option.WithBaseURL(modelConf.BaseURL), option.WithAPIKey(modelConf.ApiKey)),
-		nativeTools:  make(map[tool.AgentTool]tool.Tool),
-		mcpClients:   make(map[string]*McpClient),
-		messages:     make([]openai.ChatCompletionMessageParamUnion, 0),
+		model:         modelConf.Model,
+		client:        openai.NewClient(option.WithBaseURL(modelConf.BaseURL), option.WithAPIKey(modelConf.ApiKey)),
+		contextEngine: contextEngine,
+		nativeTools:   make(map[tool.AgentTool]tool.Tool),
+		mcpClients:    make(map[string]*McpClient),
 	}
+
+	// 设置 system prompt（ContextEngine 会自动处理占位符）
+	a.contextEngine.SetSystemPrompt(systemPrompt)
+	a.contextEngine.SetContextWindow(modelConf.ContextWindow)
+
 	for _, t := range tools {
 		a.nativeTools[t.ToolName()] = t
 	}
 	for _, mcpClient := range mcpClients {
 		a.mcpClients[mcpClient.Name()] = mcpClient
 	}
-	a.messages = append(a.messages, openai.SystemMessage(a.buildSystemPrompt()))
+
 	return &a
-}
-
-func (a *Agent) buildSystemPrompt() string {
-	replaceMap := make(map[string]string)
-	replaceMap["{runtime}"] = runtime.GOOS
-	cwd, _ := os.Getwd()
-	replaceMap["{workspace_path}"] = cwd
-
-	prompt := a.systemPrompt
-	for k, v := range replaceMap {
-		prompt = strings.ReplaceAll(prompt, k, v)
-	}
-
-	return prompt
 }
 
 func (a *Agent) execute(ctx context.Context, toolName string, argumentsInJSON string) (string, error) {
@@ -92,30 +80,17 @@ func (a *Agent) buildTools() []openai.ChatCompletionToolUnionParam {
 }
 
 func (a *Agent) ResetSession() {
-	a.messages = make([]openai.ChatCompletionMessageParamUnion, 0)
-	a.messages = append(a.messages, openai.SystemMessage(a.systemPrompt))
-}
-
-func (a *Agent) SessionSnapshot() int {
-	return len(a.messages)
-}
-
-func (a *Agent) RestoreSession(snapshot int) {
-	if snapshot < 1 {
-		snapshot = 1
-	}
-	if snapshot > len(a.messages) {
-		return
-	}
-	a.messages = append([]openai.ChatCompletionMessageParamUnion{}, a.messages[:snapshot]...)
+	a.contextEngine.Reset()
 }
 
 // RunStreaming 和 Run 基本逻辑一致，但是使用流式请求，并且通过 channel 实现流式输出
 func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan MessageVO) error {
 	// 为本轮次创建新的消息链。这样如果流式过程中失败或者终止了，不会污染历史上下文。
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(a.messages))
-	messages = append(messages, a.messages...)
+	messages := a.contextEngine.GetAllMessages()
 	messages = append(messages, openai.UserMessage(query))
+
+	// 记录开始时的消息数量（不含 system prompt）
+	startMsgCount := len(messages)
 
 	for {
 		params := openai.ChatCompletionNewParams{
@@ -198,7 +173,9 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 
 	}
 	// 轮次正常结束，agent 保存当前最新的消息链状态
-	a.messages = messages
+	// 批量添加本轮新增的消息（从 startMsgCount 开始）
+	newMessages := messages[startMsgCount:]
+	a.contextEngine.AddMessages(ctx, newMessages)
 	return nil
 }
 

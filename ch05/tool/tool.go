@@ -9,10 +9,11 @@ import (
 type AgentTool = string
 
 const (
-	AgentToolRead  AgentTool = "read"
-	AgentToolWrite AgentTool = "write"
-	AgentToolEdit  AgentTool = "edit"
-	AgentToolBash  AgentTool = "bash"
+	AgentToolRead        AgentTool = "read"
+	AgentToolWrite       AgentTool = "write"
+	AgentToolEdit        AgentTool = "edit"
+	AgentToolBash        AgentTool = "bash"
+	AgentToolLoadStorage AgentTool = "load_storage"
 )
 
 type Tool interface {

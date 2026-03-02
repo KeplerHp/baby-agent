@@ -12,6 +12,9 @@ import (
 	"babyagent/ch05"
 	"babyagent/ch05/tool"
 	"babyagent/shared"
+
+	ctxengine "babyagent/ch05/context"
+	"babyagent/ch05/storage"
 )
 
 func main() {
@@ -34,11 +37,19 @@ func main() {
 		mcpClients = append(mcpClients, mcpClient)
 	}
 
+	// 创建上下文引擎和策略
+	store := storage.NewMemoryStorage()
+	strategies := []ctxengine.ContextStrategy{
+		ctxengine.NewTruncateStrategy(10, 5, 0.85),
+	}
+	contextEngine := ctxengine.NewContextEngine(store, strategies)
+
 	agent := ch05.NewAgent(
 		modelConf,
 		ch05.CodingAgentSystemPrompt,
 		[]tool.Tool{tool.NewBashTool()},
 		mcpClients,
+		contextEngine,
 	)
 
 	log.SetOutput(io.Discard)
