@@ -79,28 +79,17 @@ func (a *Agent) ResetSession() {
 	a.messages = append(a.messages, openai.SystemMessage(a.systemPrompt))
 }
 
-func (a *Agent) SessionSnapshot() int {
-	return len(a.messages)
-}
-
-func (a *Agent) RestoreSession(snapshot int) {
-	if snapshot < 1 {
-		snapshot = 1
-	}
-	if snapshot > len(a.messages) {
-		return
-	}
-	a.messages = append([]openai.ChatCompletionMessageParamUnion{}, a.messages[:snapshot]...)
-}
-
 // RunStreaming 和 Run 基本逻辑一致，但是使用流式请求，并且通过 channel 实现流式输出
 func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan MessageVO) error {
-	a.messages = append(a.messages, openai.UserMessage(query))
+	// 为本轮次创建新的消息链。这样如果流式过程中失败或者终止了，不会污染历史上下文。
+	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(a.messages))
+	messages = append(messages, a.messages...)
+	messages = append(messages, openai.UserMessage(query))
 
 	for {
 		params := openai.ChatCompletionNewParams{
 			Model:    a.model,
-			Messages: a.messages,
+			Messages: messages,
 			Tools:    a.buildTools(),
 		}
 
@@ -144,7 +133,7 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 		}
 		message := acc.Choices[0].Message
 		// 拼接 assistant message 到整体消息链中
-		a.messages = append(a.messages, message.ToParam())
+		messages = append(messages, message.ToParam())
 
 		// tool loop 结束，可以返回结果
 		if len(message.ToolCalls) == 0 {
@@ -173,10 +162,12 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 			}
 			log.Printf("tool call %s, arguments %s, error: %v", toolCall.Function.Name, toolCall.Function.Arguments, err)
 			// 返回 tool message 到整体消息链中
-			a.messages = append(a.messages, openai.ToolMessage(toolResult, toolCall.ID))
+			messages = append(messages, openai.ToolMessage(toolResult, toolCall.ID))
 		}
 
 	}
+	// 轮次正常结束，agent 保存当前最新的消息链状态
+	a.messages = messages
 	return nil
 }
 

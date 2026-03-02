@@ -88,10 +88,9 @@ type activeStream struct {
 	events <-chan ch05.MessageVO
 	cancel context.CancelFunc
 
-	turnSnapshot int
-	turnLogLen   int
-	reasonBody   int
-	contentBody  int
+	turnLogLen  int
+	reasonBody  int
+	contentBody int
 }
 
 type model struct {
@@ -100,7 +99,6 @@ type model struct {
 
 	input string
 	logs  []LogEntry
-	round int
 
 	state  runState
 	active *activeStream
@@ -340,21 +338,18 @@ func (m *model) handleStreamDone(msg streamDoneMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) startNewTurn(query string) (tea.Model, tea.Cmd) {
 	m.notice = ""
-	m.round++
 	turnStart := len(m.logs)
-	m.logs = append(m.logs, NewLabel(fmt.Sprintf("第 %d 轮", m.round)))
 	m.logs = append(m.logs, NewContent(query))
 
 	streamC := make(chan ch05.MessageVO)
 	doneC := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.active = &activeStream{
-		events:       streamC,
-		cancel:       cancel,
-		turnSnapshot: m.agent.SessionSnapshot(),
-		turnLogLen:   turnStart,
-		reasonBody:   -1,
-		contentBody:  -1,
+		events:      streamC,
+		cancel:      cancel,
+		turnLogLen:  turnStart,
+		reasonBody:  -1,
+		contentBody: -1,
 	}
 	m.state = stateRunning
 	m.refreshLogsViewportContent()
@@ -373,7 +368,6 @@ func (m *model) clearSession() {
 	m.agent.ResetSession()
 	m.logs = m.logs[:0]
 	m.notice = "会话已清空（仅保留 system prompt）。"
-	m.round = 0
 	m.refreshLogsViewportContent()
 }
 
@@ -390,7 +384,6 @@ func (m *model) rollbackTurn() {
 	if m.active == nil {
 		return
 	}
-	m.agent.RestoreSession(m.active.turnSnapshot)
 	if m.active.turnLogLen >= 0 && m.active.turnLogLen <= len(m.logs) {
 		m.logs = m.logs[:m.active.turnLogLen]
 	}
