@@ -1,4 +1,6 @@
-# 后端工程师的零基础 AI Agent 开发教程 (Go 语言版)
+# BabyAgent - 后端工程师的AI Agent 开发教程 (Go 语言版)
+
+🏠 **项目地址：** https://github.com/baby-llm/baby-agent
 
 🚀 **从后端视角出发，用 Go 语言构建工业级 AI 智能体。**
 
@@ -145,7 +147,7 @@
 ## 📂 项目结构说明
 
 ```
-ai-agent-tutorials/
+baby-agent/
 ├── ch01/           # ✅ 第一章：初识 LLM（Raw HTTP 与 SDK）
 ├── ch02/           # ✅ 第二章：Function Calling 与 Agent Loop
 ├── ch03/           # ✅ 第三章：推理展示与 TUI 可视化
