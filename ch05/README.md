@@ -1,30 +1,69 @@
 # 第五章：上下文工程（Context Engineering）
 
-欢迎来到第五章！在第四章的基础上，本章介绍 Agent 开发中最重要的概念之一——**上下文工程**（Context Engineering）。
+欢迎来到第五章！在第四章的基础上，本章介绍 Agent 开发中最重要的概念之一：**上下文工程**（Context Engineering）。
 
-随着 Agent 交互轮次的增加，上下文长度会线性增长，最终触及模型的上下文窗口限制，导致性能下降或请求失败。本章将实现一套完整的上下文管理策略，让 Agent 能够在有限的上下文窗口内高效运行。
+随着 Agent 交互轮次增加，上下文长度会持续增长，最终触及模型上下文窗口限制，导致性能下降或请求失败。本章实现一套完整的上下文管理机制，让 Agent 能在有限窗口内稳定运行。
 
 ---
 
 ## 🎯 你将学到什么
 
-1. **上下文管理策略**：理解为什么需要上下文工程，以及常见的策略类型。
-2. **截断策略（Truncation）**：如何安全地删除旧消息，保留最近的关键对话。
-3. **卸载策略（Offloading）**：将长消息内容存储到外部存储，在上下文中保留摘要和恢复提示。
-4. **摘要策略（Summarization）**：使用 LLM 对历史对话进行摘要压缩，保留关键信息。
-5. **策略模式设计**：如何设计可扩展的策略接口，支持灵活组合多种上下文管理策略。
-6. **策略事件系统**：如何通过事件机制在 TUI 中展示策略执行状态。
+1. **上下文管理机制**：理解为什么需要上下文工程，以及常见压缩手段。
+2. **截断策略（Truncate）**：如何安全删除旧消息并保留对话连续性。
+3. **卸载策略（Offload）**：将长内容写入外部存储，在上下文中保留预览与恢复入口。
+4. **摘要策略（Summarize）**：使用 LLM 对历史消息进行增量压缩。
+5. **Policy 模式设计**：如何设计可扩展的策略接口，支持多策略组合执行。
+6. **策略协同与调参**：如何根据阈值、批大小、保留条数进行工程化调优。
 
 ---
 
 ## 🛠 准备工作
 
-复用根目录的 `.env` 配置（见项目根目录 `README.md`）。
+本章启动时会读取新的配置文件（见 `ch05/tui/main.go`）：
 
-```env
-OPENAI_API_KEY=sk-your-api-key-here
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
+1. `config.json`：应用模型配置（前台模型 + 后台摘要模型）
+2. `mcp-server.json`：MCP 服务配置（可选，读取失败仅打印日志）
+
+可按下面方式准备：
+
+```bash
+cp config.example.json config.json
+```
+
+`config.json` 示例：
+
+```json
+{
+  "llm_providers": {
+    "front_model": {
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-5.2",
+      "api_key": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "context_window": 200000
+    },
+    "back_model": {
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "api_key": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "context_window": 128000
+    }
+  }
+}
+```
+
+`mcp-server.json` 示例：
+
+```json
+{
+  "filesystem": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "${workspaceFolder}"
+    ]
+  }
+}
 ```
 
 ---
@@ -37,155 +76,138 @@ OPENAI_MODEL=gpt-4o-mini
 - GPT-4o-mini: 128K tokens
 - Claude 3.5 Sonnet: 200K tokens
 
-Agent 的每次对话都会消耗 tokens，包括：
+Agent 每轮对话都会消耗 tokens，包括：
 - 用户输入
 - 模型输出
-- 工具调用和工具结果
+- 工具调用与工具结果
 
-如果不进行管理，多轮对话后会出现：
+如果不做管理，多轮对话后会出现：
 1. **超出窗口限制**：请求被拒绝
-2. **成本增加**：长上下文导致更高的 API 费用
-3. **性能下降**：模型在长上下文中可能"注意力分散"，影响响应质量
+2. **成本增加**：长上下文导致更高 API 费用
+3. **性能下降**：模型在长上下文中注意力分散，响应质量下降
 
 ---
 
-### 2. 四种上下文管理策略
+### 2. 三种上下文管理策略
 
-#### 2.1 截断策略（Truncation）
+#### 2.1 截断策略（Truncate）
 
-**原理**：直接删除旧消息，只保留最近 N 条消息。
+**原理**：删除较早历史消息，保留最近对话。
 
 **实现要点**：
-- 找到最后一条 User 消息，确保对话完整性
-- 设置最少保留消息数量，避免删光所有历史
-- 更新 token 计数
+- 触发条件：`contextUsage > UsageThreshold`
+- 保留最近 `KeepRecentMessages` 条消息作为“不可裁剪区”
+- 在可裁剪区中寻找最后一条 user 消息作为截断边界，减少语义断裂
+- 避免极端情况下把历史全部删空
 
-**适用场景**：对历史信息要求不高、只需关注最近对话的任务。
+**适用场景**：对远期历史依赖较弱、优先保障实时交互的任务。
 
-相关代码：`ch05/context/truncate.go`
+相关代码：`ch05/context/policy_truncate.go`
 
 ---
 
-#### 2.2 卸载策略（Offloading）
+#### 2.2 卸载策略（Offload）
 
-**原理**：将长消息内容存储到外部存储（如内存、Redis），在上下文中保留简短摘要和恢复提示。
+**原理**：将长消息正文存到外部存储，在上下文中保留短预览与恢复提示。
 
 **实现要点**：
-- 只卸载超过一定长度的消息
-- 在消息末尾添加恢复提示（如 `load_storage(key=xxx)`）
-- 提供 `load_storage` 工具，让 Agent 可以按需恢复完整内容
+- 触发条件：`contextUsage > UsageThreshold`
+- 只处理“非最近 N 条消息”中的 `tool` 消息
+- 只处理长度超过 `PreviewCharLimit` 的长内容
+- 通过 `Storage.Store` 存储原文
+- 用“预览 + `load_storage(key="...")` 提示”替换正文
 
 **示例效果**：
-```
+```text
 原始消息（2000 tokens）：
-"这是一个非常长的消息内容..."
+"这是一个非常长的工具输出..."
 
-卸载后消息（200 tokens）：
-"这是一个非常长的消息内容...（更多内容已卸载，如需查看全文请使用 load_storage(key=/offload/msg_001) 工具）"
+卸载后消息（约200 tokens）：
+"这是一个非常长的工具输出...（更多内容已卸载，如需查看全文请使用 load_storage(key=\"/offload/...\") 工具）"
 ```
 
-**适用场景**：有少量关键长消息、需要时可以按需恢复的场景。
+**适用场景**：有大量长工具输出，但允许按需回读全文的任务。
 
-相关代码：`ch05/context/offload.go`、`ch05/tool/load_storage.go`
+相关代码：`ch05/context/policy_offload.go`、`ch05/tool/load_storage.go`
 
 ---
 
-#### 2.3 摘要策略（Summarization）
+#### 2.3 摘要策略（Summarize）
 
-**原理**：使用 LLM 将多条历史消息摘要成一条简短消息。
+**原理**：把多条历史消息压缩成一条摘要消息，保留关键信息。
 
 **实现要点**：
-- 批量处理消息（避免单次摘要请求过长）
-- 支持增量摘要（新摘要基于旧摘要生成）
-- 使用专门的摘要模型（更快、更便宜）
+- 触发条件：`contextUsage > UsageThreshold`
+- 仅处理“非最近 N 条消息”
+- 分批摘要：每批最多 `SummaryBatchSize` 条，且受 `Summarizer.GetSummaryInputTokenLimit()` 限制
+- 增量摘要：`runningSummary + batchMessages -> newSummary`
+- 最终用一条摘要消息替换被压缩历史
 
-**示例效果**：
-```
-原始消息（10条，共5000 tokens）：
-user: 列出当前目录文件
-assistant: [bash 工具调用]
-tool: file1.txt file2.go
-assistant: 目录中有 file1.txt 和 file2.go
-...
+**适用场景**：对话较长但只需保留核心事实、决策与结果。
 
-摘要后消息（1条，共300 tokens）：
-用户询问如何列出目录文件，助手使用 bash 工具执行了 ls 命令，结果显示目录中有 file1.txt 和 file2.go 两个文件。
-```
-
-**适用场景**：长对话历史、需要保留关键信息但可以忽略细节的场景。
-
-相关代码：`ch05/context/summary.go`
+相关代码：`ch05/context/policy_summary.go`、`ch05/context/summary.go`
 
 ---
 
-### 3. 策略模式设计
+### 3. Policy 模式设计
 
-本章使用策略模式设计上下文管理：
+本章通过 `Policy` 接口实现可扩展上下文管理：
 
 ```go
-type ContextStrategy interface {
+type Policy interface {
     Name() string
-    ShouldApply(ctx context.Context, engine *ContextEngine) bool
-    Apply(ctx context.Context, engine *ContextEngine) error
+    ShouldApply(ctx context.Context, engine *Engine) bool
+    Apply(ctx context.Context, engine *Engine) (PolicyResult, error)
 }
 ```
 
 **优势**：
-- 可扩展：新增策略无需修改核心逻辑
-- 可组合：多个策略可以按注册顺序同时生效
-- 可配置：通过 `ShouldApply` 控制触发条件
+- 可扩展：新增策略无需改 `Engine` 核心流程
+- 可组合：多个策略按注册顺序依次执行
+- 可控制：每个策略通过 `ShouldApply` 决定是否触发
 
 **执行流程**：
-1. 每次添加消息后，`ContextEngine` 自动调用 `ApplyStrategies`
-2. 按顺序检查每个策略的 `ShouldApply`
-3. 如果返回 `true`，执行 `Apply` 方法
-4. 策略可以修改 `messages` 和 `contextTokens`
-5. 执行过程中发送策略事件到 TUI 展示
+1. 每轮新增消息后，`Engine.CommitTurn` 调用内部 `applyPolicies`
+2. 按顺序检查每个 `Policy.ShouldApply`
+3. 返回 `true` 则执行 `Policy.Apply`
+4. `Apply` 返回新的消息列表和 token 计数（`PolicyResult`）
 
-相关代码：`ch05/context/strategy.go`、`ch05/context/context.go`
+相关代码：`ch05/context/policy.go`、`ch05/context/context.go`
 
 ---
 
-### 4. 策略事件系统
+### 4. Engine 与 Summarizer 协作
 
-为了在 TUI 中实时展示策略执行状态，本章实现了事件通知机制：
+当前实现中，摘要能力从策略中解耦为 `Summarizer` 抽象：
 
-**事件类型**：
-- `StrategyEventStart`：策略开始执行
-- `StrategyEventComplete`：策略执行完成（成功或失败）
-
-**实现原理**：
-1. `ContextEngine` 持有 `strategyEventChan` 用于发送事件
-2. `Agent` 在 `RunStreaming` 开始时设置事件 channel
-3. 启动独立 goroutine 监听策略事件并转发到 TUI
-4. TUI 接收事件后更新日志区域，显示"策略: truncation (运行中...)"或"(已完成)"
-
-**TUI 展示效果**：
-```
-你: 请连续输出数字 1 到 100
-
-回答: 好的，我将为您输出数字 1 到 100...
-
-策略: truncation (运行中...)
-策略: truncation (已完成)
-
-回答: 1, 2, 3, ...
+```go
+type Summarizer interface {
+    GetSummaryInputTokenLimit() int
+    Summarize(ctx context.Context, runningSummary string, messages []openai.ChatCompletionMessageParamUnion) (string, error)
+}
 ```
 
-相关代码：`ch05/context/event.go`、`ch05/agent.go`、`ch05/tui/tui.go`
+默认实现是 `LLMSummarizer`，使用 `shared.ModelConfig` 创建摘要模型客户端。
+
+**好处**：
+1. 摘要策略只关心“何时摘要、摘要哪些消息”
+2. 摘要实现可替换（不同模型、本地模型、规则摘要器）
+3. 便于单测与演进
+
+相关代码：`ch05/context/summary.go`、`ch05/context/policy_summary.go`
 
 ---
 
 ### 5. Token 计数
 
-为了准确判断是否需要触发策略，我们需要实时计算上下文 token 数量。
+为了准确判断是否触发策略，需要实时统计上下文 token。
 
 **实现方式**：
-- 使用 `tiktoken-go` 库（OpenAI 官方 tokenizer 的 Go 移植）
-- 对 `cl100k_base` 编码进行计数（GPT-4/GPT-3.5 使用）
-- 每次添加/删除消息时更新计数
+- 使用 `tiktoken-go`（`cl100k_base`）
+- 对消息正文做 token 计数
+- 每轮提交和策略执行后重算上下文 token
 
-**注意**：Token 计数是估算值，实际 API 调用可能有细微差异。
+**注意**：属于近似估算，和实际 API 计费可能有细微差异。
 
 相关代码：`ch05/context/share.go`
 
@@ -194,20 +216,19 @@ type ContextStrategy interface {
 ## 💻 代码结构速览
 
 ### Context 包
-- `ch05/context/context.go`：上下文引擎核心，管理消息列表和策略应用
-- `ch05/context/strategy.go`：策略接口定义
-- `ch05/context/event.go`：策略事件类型定义
-- `ch05/context/truncate.go`：截断策略实现
-- `ch05/context/offload.go`：卸载策略实现
-- `ch05/context/summary.go`：摘要策略实现
-- `ch05/context/share.go`：Token 计数工具
+- `ch05/context/context.go`：上下文引擎核心（`Engine`）
+- `ch05/context/policy.go`：`Policy` 接口与 `PolicyResult`
+- `ch05/context/policy_truncate.go`：截断策略
+- `ch05/context/policy_offload.go`：卸载策略
+- `ch05/context/policy_summary.go`：摘要策略
+- `ch05/context/summary.go`：`Summarizer` 接口与 `LLMSummarizer`
+- `ch05/context/share.go`：token 计数与角色识别工具
 
 ### 其他核心模块
-- `ch05/storage/storage.go`：存储接口（用于卸载策略）
-- `ch05/tool/load_storage.go`：加载存储数据的工具
-- `ch05/agent.go`：集成上下文引擎的 Agent，支持策略事件转发
-- `ch05/vo.go`：视图对象定义，包含策略事件 VO
-- `ch05/tui/tui.go`：TUI 界面，展示策略执行状态
+- `ch05/storage/storage.go`：存储接口（卸载策略依赖）
+- `ch05/tool/load_storage.go`：读取卸载内容的工具
+- `ch05/agent.go`：集成上下文引擎的 Agent
+- `ch05/tui/main.go`：策略装配与启动入口
 
 ---
 
@@ -219,20 +240,20 @@ type ContextStrategy interface {
 go run ./ch05/tui
 ```
 
-在 TUI 中尝试以下场景，观察上下文管理的效果：
+在 TUI 中可尝试：
 
 **1. 测试截断策略**
-```
+```text
 请连续输出数字 1 到 100，每个数字单独输出
 ```
 
 **2. 测试卸载策略**
-```
+```text
 请读取 README.md 并总结每一章节的内容
 ```
 
 **3. 测试摘要策略**
-```
+```text
 我们来进行多轮对话：第一轮，请介绍你自己
 第二轮，请列出当前目录的文件
 第三轮，请读取 agent.go 文件
@@ -243,10 +264,10 @@ go run ./ch05/tui
 
 ## ⚠️ 注意事项
 
-1. **策略优先级**：当前实现按策略注册顺序执行，建议优先级为：摘要 > 卸载 > 截断
-2. **摘要成本**：摘要策略需要额外的 LLM 调用，会产生额外的 API 费用
-3. **存储选择**：生产环境中建议使用 Redis 或数据库替代内存存储
-4. **阈值设置**：根据实际模型的上下文窗口调整触发阈值
+1. **策略顺序有影响**：当前默认顺序是 `offload -> summarize -> truncate`
+2. **摘要有额外成本**：摘要策略会引入额外 LLM 调用
+3. **存储建议持久化**：生产环境建议用 Redis/数据库替代内存存储
+4. **阈值需按模型调参**：不同模型上下文窗口不同，触发阈值需要按实际容量设置
 
 ---
 

@@ -3,162 +3,17 @@ package context
 import (
 	"context"
 	"errors"
-	"log"
 	"strconv"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 
 	"babyagent/shared"
 )
 
-type SummaryStrategy struct {
-	KeepRecentCount int
-	SummaryLength   int
-	SummaryBatch    int
-	Threshold       float64
-
-	llmClient        openai.Client
-	summaryModelConf shared.ModelConfig
-}
-
-func (s *SummaryStrategy) Name() string {
-	return "summary"
-}
-
-func NewSummaryStrategy(summaryModelConf shared.ModelConfig, keepRecentCount, summaryLength, summaryBatch int, threshold float64) *SummaryStrategy {
-	llmClient := openai.NewClient(option.WithBaseURL(summaryModelConf.BaseURL), option.WithAPIKey(summaryModelConf.ApiKey))
-	return &SummaryStrategy{
-		llmClient:        llmClient,
-		summaryModelConf: summaryModelConf,
-		KeepRecentCount:  keepRecentCount,
-		SummaryLength:    summaryLength,
-		SummaryBatch:     summaryBatch,
-		Threshold:        threshold,
-	}
-}
-
-func (s *SummaryStrategy) ShouldApply(ctx context.Context, engine *ContextEngine) bool {
-	return engine.GetContextUsage() > s.Threshold
-}
-
-func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) (StrategyResult, error) {
-	if len(engine.messages) <= s.KeepRecentCount {
-		return StrategyResult{
-			Messages:      engine.messages,
-			ContextTokens: engine.contextTokens,
-		}, nil
-	}
-
-	toSummaryIndex := len(engine.messages) - s.KeepRecentCount
-	triggerThreshold := s.summaryModelConf.ContextWindow / 2
-
-	accumulatedSummary := ""
-
-	// 计算被替换消息的总 token 数
-	removedTokens := 0
-	for i := 0; i < toSummaryIndex; i++ {
-		removedTokens += engine.messages[i].Tokens
-	}
-
-	batchStart := 0
-
-	for batchStart < toSummaryIndex {
-		batchMessages := make([]openai.ChatCompletionMessageParamUnion, 0)
-		batchTokens := 0
-
-		for i := batchStart; i < toSummaryIndex; i++ {
-			// 计算当前消息的 token 数
-			msgTokens := engine.messages[i].Tokens
-
-			// 如果加上这条消息后超过阈值，且已经有消息了，则停止添加
-			if batchTokens+msgTokens > triggerThreshold && len(batchMessages) > 0 {
-				break
-			}
-
-			batchMessages = append(batchMessages, engine.messages[i].Message)
-			batchTokens += msgTokens
-
-			// 达到 batch 数量，停止添加
-			if len(batchMessages) >= s.SummaryBatch {
-				break
-			}
-		}
-
-		if len(batchMessages) == 0 {
-			break
-		}
-
-		batchSummary, err := s.generateSummary(ctx, batchMessages, accumulatedSummary)
-		if err != nil {
-			return StrategyResult{}, err
-		}
-
-		accumulatedSummary = batchSummary
-		batchStart += len(batchMessages)
-	}
-
-	if len(accumulatedSummary) == 0 {
-		log.Printf("no summary generated")
-		return StrategyResult{
-			Messages:      engine.messages,
-			ContextTokens: engine.contextTokens,
-		}, nil
-	}
-
-	// 构建新的消息列表
-	messages := make([]messageWrap, 0, len(engine.messages))
-
-	summaryMessage := openai.UserMessage(accumulatedSummary)
-	newTokens := CountTokens(summaryMessage)
-
-	messages = append(messages, messageWrap{Message: summaryMessage, Tokens: newTokens})
-	messages = append(messages, engine.messages[toSummaryIndex:]...)
-
-	// 返回新的消息列表和 token 计数
-	return StrategyResult{
-		Messages:      messages,
-		ContextTokens: engine.contextTokens - removedTokens + newTokens,
-	}, nil
-}
-
-func (s *SummaryStrategy) generateSummary(ctx context.Context, batchMessages []openai.ChatCompletionMessageParamUnion, accumulatedSummary string) (string, error) {
-	var b strings.Builder
-
-	b.WriteString(accumulatedSummary)
-	for i := range batchMessages {
-		roleName := GetRoleName(batchMessages[i])
-		contentAny := batchMessages[i].GetContent().AsAny()
-		contentStr, ok := contentAny.(*string)
-		if !ok {
-			continue
-		}
-		b.WriteString(roleName)
-		b.WriteString(": ")
-		b.WriteString(*contentStr)
-		b.WriteString("\n")
-	}
-
-	prompt := strings.ReplaceAll(summaryPromptTemplate, "{text}", b.String())
-	prompt = strings.ReplaceAll(prompt, "{summary_length}", strconv.Itoa(s.SummaryLength))
-
-	resp, err := s.llmClient.Chat.Completions.New(ctx,
-		openai.ChatCompletionNewParams{
-			Model: s.summaryModelConf.Model,
-			Messages: []openai.ChatCompletionMessageParamUnion{
-				openai.UserMessage(prompt),
-			},
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-	if len(resp.Choices) == 0 {
-		return "", errors.New("no choices returned")
-	}
-	return resp.Choices[0].Message.Content, nil
-
+type Summarizer interface {
+	GetSummaryInputTokenLimit() int
+	Summarize(ctx context.Context, runningSummary string, messages []openai.ChatCompletionMessageParamUnion) (string, error)
 }
 
 const (
@@ -186,3 +41,59 @@ Output:
 User asked to list directory contents. Assistant ran bash command showing file1.txt, file2.go, and a directory.
 `
 )
+
+type LLMSummarizer struct {
+	llmClient        openai.Client
+	modelConf        shared.ModelConfig
+	summaryCharLimit int
+}
+
+func (s *LLMSummarizer) GetSummaryInputTokenLimit() int {
+	return s.modelConf.ContextWindow / 2
+}
+
+func NewLLMSummarizer(modelConf shared.ModelConfig, summaryCharLimit int) *LLMSummarizer {
+	return &LLMSummarizer{
+		llmClient:        shared.NewLLMClient(modelConf),
+		modelConf:        modelConf,
+		summaryCharLimit: summaryCharLimit,
+	}
+}
+
+func (s *LLMSummarizer) Summarize(ctx context.Context, runningSummary string, messages []openai.ChatCompletionMessageParamUnion) (string, error) {
+	var b strings.Builder
+
+	b.WriteString(runningSummary)
+	for i := range messages {
+		roleName := GetRoleName(messages[i])
+		contentAny := messages[i].GetContent().AsAny()
+		contentStr, ok := contentAny.(*string)
+		if !ok {
+			continue
+		}
+		b.WriteString(roleName)
+		b.WriteString(": ")
+		b.WriteString(*contentStr)
+		b.WriteString("\n")
+	}
+
+	prompt := strings.ReplaceAll(summaryPromptTemplate, "{text}", b.String())
+	prompt = strings.ReplaceAll(prompt, "{summary_length}", strconv.Itoa(s.summaryCharLimit))
+
+	resp, err := s.llmClient.Chat.Completions.New(ctx,
+		openai.ChatCompletionNewParams{
+			Model: s.modelConf.Model,
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.UserMessage(prompt),
+			},
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", errors.New("no choices returned")
+	}
+	return resp.Choices[0].Message.Content, nil
+
+}

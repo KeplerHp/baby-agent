@@ -40,19 +40,21 @@ func main() {
 		mcpClients = append(mcpClients, mcpClient)
 	}
 
-	// 创建上下文引擎和策略
+	// 创建上下文引擎和 policy
 	store := storage.NewMemoryStorage()
-	strategies := []ctxengine.ContextStrategy{
-		ctxengine.NewOffloadStrategy(0.4, 0, 100, "msg"),
-		ctxengine.NewSummaryStrategy(appConf.LLMProviders.BackModel, 0, 200, 10, 0.6),
-		ctxengine.NewTruncateStrategy(0, 0.85),
+	summarizer := ctxengine.NewLLMSummarizer(appConf.LLMProviders.BackModel, 200)
+
+	policies := []ctxengine.Policy{
+		ctxengine.NewOffloadPolicy(store, 0.4, 0, 100),
+		ctxengine.NewSummaryPolicy(summarizer, 0, 10, 0.6),
+		ctxengine.NewTruncatePolicy(0, 0.85),
 	}
-	contextEngine := ctxengine.NewContextEngine(store, strategies)
+	contextEngine := ctxengine.NewContextEngine(policies)
 
 	agent := ch05.NewAgent(
 		appConf.LLMProviders.FrontModel,
 		ch05.CodingAgentSystemPrompt,
-		[]tool.Tool{tool.NewBashTool(), tool.NewLoadStorageTool(storage.NewMemoryStorage())},
+		[]tool.Tool{tool.NewBashTool(), tool.NewLoadStorageTool(store)},
 		mcpClients,
 		contextEngine,
 	)

@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 
 	"babyagent/ch05/tool"
 	"babyagent/shared"
@@ -18,23 +17,21 @@ import (
 type Agent struct {
 	model         string
 	client        openai.Client
-	contextEngine *ctxengine.ContextEngine
+	contextEngine *ctxengine.Engine
 	nativeTools   map[tool.AgentTool]tool.Tool
 	mcpClients    map[string]*McpClient
 }
 
-func NewAgent(modelConf shared.ModelConfig, systemPrompt string, tools []tool.Tool, mcpClients []*McpClient, contextEngine *ctxengine.ContextEngine) *Agent {
+func NewAgent(modelConf shared.ModelConfig, systemPrompt string, tools []tool.Tool, mcpClients []*McpClient, contextEngine *ctxengine.Engine) *Agent {
 	a := Agent{
 		model:         modelConf.Model,
-		client:        openai.NewClient(option.WithBaseURL(modelConf.BaseURL), option.WithAPIKey(modelConf.ApiKey)),
+		client:        shared.NewLLMClient(modelConf),
 		contextEngine: contextEngine,
 		nativeTools:   make(map[tool.AgentTool]tool.Tool),
 		mcpClients:    make(map[string]*McpClient),
 	}
 
-	// 设置 system prompt（ContextEngine 会自动处理占位符）
-	a.contextEngine.SetSystemPrompt(systemPrompt)
-	a.contextEngine.SetContextWindow(modelConf.ContextWindow)
+	a.contextEngine.Init(systemPrompt, ctxengine.TokenBudget{ContextWindow: modelConf.ContextWindow})
 
 	for _, t := range tools {
 		a.nativeTools[t.ToolName()] = t
@@ -85,18 +82,12 @@ func (a *Agent) ResetSession() {
 
 // RunStreaming 和 Run 基本逻辑一致，但是使用流式请求，并且通过 channel 实现流式输出
 func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan MessageVO) error {
-	// 设置策略事件 channel，用于转发策略执行状态到 TUI
-	// 必须在 AddMessages 之前设置，因为 AddMessages 会触发策略执行
-	strategyCh := make(chan ctxengine.StrategyEvent, 10)
-	defer close(strategyCh)
-	a.contextEngine.SetStrategyEventChan(strategyCh)
+	draft := a.contextEngine.StartTurn(openai.UserMessage(query))
+	defer a.contextEngine.AbortTurn(draft)
 
-	// 为本轮次创建新的消息链。这样如果流式过程中失败或者终止了，不会污染历史上下文。
-	messages := a.contextEngine.GetAllMessages()
-	messages = append(messages, openai.UserMessage(query))
-
-	// 记录开始时的消息数量（不含 system prompt），用于后续提交新消息
-	baseMessageCount := len(messages) - 1
+	// 为本轮次创建新的消息链。草稿消息在 commit 前不会污染上下文。
+	messages := a.contextEngine.BuildRequestMessages()
+	messages = append(messages, draft.NewMessages...)
 	var usage openai.CompletionUsage
 	for {
 		params := openai.ChatCompletionNewParams{
@@ -145,7 +136,9 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 		usage = acc.Usage
 		message := acc.Choices[0].Message
 		// 拼接 assistant message 到整体消息链中
-		messages = append(messages, message.ToParam())
+		assistantMsg := message.ToParam()
+		messages = append(messages, assistantMsg)
+		draft.NewMessages = append(draft.NewMessages, assistantMsg)
 
 		// tool loop 结束，可以返回结果
 		if len(message.ToolCalls) == 0 {
@@ -174,17 +167,15 @@ func (a *Agent) RunStreaming(ctx context.Context, query string, viewCh chan Mess
 			}
 			log.Printf("tool call %s, arguments %s, error: %v", toolCall.Function.Name, toolCall.Function.Arguments, err)
 			// 返回 tool message 到整体消息链中
-			messages = append(messages, openai.ToolMessage(toolResult, toolCall.ID))
+			toolMsg := openai.ToolMessage(toolResult, toolCall.ID)
+			messages = append(messages, toolMsg)
+			draft.NewMessages = append(draft.NewMessages, toolMsg)
 		}
 
 	}
 
-	// 轮次正常结束，agent 保存当前最新的消息链状态
-	// 批量添加本轮新增的消息（从 baseMessageCount 开始）
-	newMessages := messages[baseMessageCount:]
-	a.contextEngine.SetUsage(int(usage.TotalTokens))
-	a.contextEngine.AddMessages(ctx, newMessages)
-	return nil
+	err := a.contextEngine.CommitTurn(ctx, draft, ctxengine.Usage{PromptTokens: int(usage.TotalTokens)})
+	return err
 }
 
 type deltaWithReasoning struct {

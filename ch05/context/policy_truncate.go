@@ -2,32 +2,34 @@ package context
 
 import "context"
 
-type TruncateStrategy struct {
-	KeepRecentCount int     // 保留最近 N 条消息
-	Threshold       float64 // 触发阈值
+type TruncatePolicy struct {
+	// KeepRecentMessages 表示最少保留的最近消息数量。
+	KeepRecentMessages int
+	// UsageThreshold 表示上下文使用率超过该值时触发截断。
+	UsageThreshold float64
 }
 
-func NewTruncateStrategy(keepRecentCount int, threshold float64) *TruncateStrategy {
-	return &TruncateStrategy{
-		KeepRecentCount: keepRecentCount,
-		Threshold:       threshold,
+func NewTruncatePolicy(keepRecentMessages int, usageThreshold float64) *TruncatePolicy {
+	return &TruncatePolicy{
+		KeepRecentMessages: keepRecentMessages,
+		UsageThreshold:     usageThreshold,
 	}
 }
 
-func (s *TruncateStrategy) Name() string {
-	return "truncation"
+func (p *TruncatePolicy) Name() string {
+	return "truncate"
 }
 
-func (s *TruncateStrategy) Apply(ctx context.Context, engine *ContextEngine) (StrategyResult, error) {
-	if len(engine.messages) <= s.KeepRecentCount {
-		return StrategyResult{
+func (p *TruncatePolicy) Apply(ctx context.Context, engine *Engine) (PolicyResult, error) {
+	if len(engine.messages) <= p.KeepRecentMessages {
+		return PolicyResult{
 			Messages:      engine.messages,
 			ContextTokens: engine.contextTokens,
 		}, nil
 	}
 
 	// 准备截断的前 toRemove 条消息
-	toRemove := len(engine.messages) - s.KeepRecentCount
+	toRemove := len(engine.messages) - p.KeepRecentMessages
 
 	// 在 0 ~ toRemove - 1 中找到最后一次 User 消息，保留这个 User 之后的消息，截断之前所有的历史
 	removeIdx := toRemove - 1
@@ -41,7 +43,7 @@ func (s *TruncateStrategy) Apply(ctx context.Context, engine *ContextEngine) (St
 	// 如果没有找到 user 消息，或者 removeIdx 为 0，则不删除任何消息
 	// 这样可以确保不会删除所有消息
 	if removeIdx <= 0 {
-		return StrategyResult{
+		return PolicyResult{
 			Messages:      engine.messages,
 			ContextTokens: engine.contextTokens,
 		}, nil
@@ -52,12 +54,12 @@ func (s *TruncateStrategy) Apply(ctx context.Context, engine *ContextEngine) (St
 		removedTokens += engine.messages[i].Tokens
 	}
 
-	return StrategyResult{
+	return PolicyResult{
 		Messages:      engine.messages[removeIdx:],
 		ContextTokens: engine.contextTokens - removedTokens,
 	}, nil
 }
 
-func (s *TruncateStrategy) ShouldApply(ctx context.Context, engine *ContextEngine) bool {
-	return engine.GetContextUsage() > s.Threshold
+func (p *TruncatePolicy) ShouldApply(ctx context.Context, engine *Engine) bool {
+	return engine.GetContextUsage() > p.UsageThreshold
 }
