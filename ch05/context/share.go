@@ -26,3 +26,26 @@ func CountTokens(message openai.ChatCompletionMessageParamUnion) int {
 	}
 	return 0
 }
+
+// GetRoleName 从消息中获取角色名称（不依赖 GetRole()）
+func GetRoleName(message openai.ChatCompletionMessageParamUnion) string {
+	if message.OfSystem != nil {
+		return "system"
+	}
+	if message.OfUser != nil {
+		return "user"
+	}
+	if message.OfAssistant != nil {
+		return "assistant"
+	}
+	if message.OfTool != nil {
+		return "tool"
+	}
+	if message.OfDeveloper != nil {
+		return "developer"
+	}
+	if message.OfFunction != nil {
+		return "function"
+	}
+	return "unknown"
+}

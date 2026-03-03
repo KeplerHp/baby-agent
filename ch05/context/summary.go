@@ -43,9 +43,12 @@ func (s *SummaryStrategy) ShouldApply(ctx context.Context, engine *ContextEngine
 	return engine.GetContextUsage() > s.Threshold
 }
 
-func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) error {
+func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) (StrategyResult, error) {
 	if len(engine.messages) <= s.KeepRecentCount {
-		return nil
+		return StrategyResult{
+			Messages:      engine.messages,
+			ContextTokens: engine.contextTokens,
+		}, nil
 	}
 
 	toSummaryIndex := len(engine.messages) - s.KeepRecentCount
@@ -89,7 +92,7 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 
 		batchSummary, err := s.generateSummary(ctx, batchMessages, accumulatedSummary)
 		if err != nil {
-			return err
+			return StrategyResult{}, err
 		}
 
 		accumulatedSummary = batchSummary
@@ -98,7 +101,10 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 
 	if len(accumulatedSummary) == 0 {
 		log.Printf("no summary generated")
-		return nil
+		return StrategyResult{
+			Messages:      engine.messages,
+			ContextTokens: engine.contextTokens,
+		}, nil
 	}
 
 	// 构建新的消息列表
@@ -110,11 +116,11 @@ func (s *SummaryStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 	messages = append(messages, messageWrap{Message: summaryMessage, Tokens: newTokens})
 	messages = append(messages, engine.messages[toSummaryIndex:]...)
 
-	// 更新消息列表和 token 计数
-	engine.messages = messages
-	engine.contextTokens = engine.contextTokens - removedTokens + newTokens
-
-	return nil
+	// 返回新的消息列表和 token 计数
+	return StrategyResult{
+		Messages:      messages,
+		ContextTokens: engine.contextTokens - removedTokens + newTokens,
+	}, nil
 }
 
 func (s *SummaryStrategy) generateSummary(ctx context.Context, batchMessages []openai.ChatCompletionMessageParamUnion, accumulatedSummary string) (string, error) {
@@ -122,12 +128,13 @@ func (s *SummaryStrategy) generateSummary(ctx context.Context, batchMessages []o
 
 	b.WriteString(accumulatedSummary)
 	for i := range batchMessages {
+		roleName := GetRoleName(batchMessages[i])
 		contentAny := batchMessages[i].GetContent().AsAny()
 		contentStr, ok := contentAny.(*string)
 		if !ok {
 			continue
 		}
-		b.WriteString(*batchMessages[i].GetRole())
+		b.WriteString(roleName)
 		b.WriteString(": ")
 		b.WriteString(*contentStr)
 		b.WriteString("\n")

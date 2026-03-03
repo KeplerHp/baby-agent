@@ -45,7 +45,7 @@ func main() {
 	strategies := []ctxengine.ContextStrategy{
 		ctxengine.NewOffloadStrategy(0.4, 0, 100, "msg"),
 		ctxengine.NewSummaryStrategy(appConf.LLMProviders.BackModel, 0, 200, 10, 0.6),
-		ctxengine.NewTruncateStrategy(0, 0, 0.85),
+		ctxengine.NewTruncateStrategy(0, 0.85),
 	}
 	contextEngine := ctxengine.NewContextEngine(store, strategies)
 

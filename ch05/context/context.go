@@ -81,7 +81,13 @@ func (c *ContextEngine) ApplyStrategies(ctx context.Context) {
 			Name: strategy.Name(),
 		})
 
-		err := strategy.Apply(ctx, c)
+		result, err := strategy.Apply(ctx, c)
+
+		// 使用返回值更新内部状态
+		if err == nil {
+			c.messages = result.Messages
+			c.contextTokens = result.ContextTokens
+		}
 
 		// 发送策略完成事件
 		c.sendStrategyEvent(StrategyEvent{

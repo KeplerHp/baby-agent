@@ -34,21 +34,28 @@ func (s *OffloadStrategy) makeStorageKey(i int) string {
 	return fmt.Sprintf("/offload/%s_%s_%d", s.StoragePrefix, time.Now().Format("20060102_150405"), i)
 }
 
-func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) error {
+func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) (StrategyResult, error) {
 	if len(engine.messages) <= s.KeepRecentCount {
-		return nil
+		return StrategyResult{
+			Messages:      engine.messages,
+			ContextTokens: engine.contextTokens,
+		}, nil
 	}
 
-	offloadCount := len(engine.messages) - s.KeepRecentCount
+	// 复制消息列表，避免修改原始数据
+	messages := make([]messageWrap, len(engine.messages))
+	copy(messages, engine.messages)
+	contextTokens := engine.contextTokens
+
+	offloadCount := len(messages) - s.KeepRecentCount
 
 	for i := 0; i < offloadCount; i++ {
-		role := engine.messages[i].Message.GetRole()
 		// 只卸载 tool 类型
-		if role == nil || *role != "tool" {
+		if GetRoleName(messages[i].Message) != "tool" {
 			continue
 		}
 
-		contentAny := engine.messages[i].Message.GetContent().AsAny()
+		contentAny := messages[i].Message.GetContent().AsAny()
 		contentStr, ok := contentAny.(*string)
 		if !ok {
 			continue
@@ -59,7 +66,7 @@ func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 		}
 
 		// 计算原始消息的 token 数
-		oldTokens := engine.messages[i].Tokens
+		oldTokens := messages[i].Tokens
 
 		key := s.makeStorageKey(i)
 		if err := engine.storage.Store(ctx, key, *contentStr); err != nil {
@@ -76,14 +83,18 @@ func (s *OffloadStrategy) Apply(ctx context.Context, engine *ContextEngine) erro
 		newContent := b.String()
 
 		// 修改原始消息链中的消息
-		newMessage := openai.ToolMessage(newContent, *engine.messages[i].Message.GetToolCallID())
+		newMessage := openai.ToolMessage(newContent, engine.messages[i].Message.OfTool.ToolCallID)
 
 		// 计算新消息的 token 数并更新计数
 		newTokens := CountTokens(newMessage)
-		engine.messages[i] = messageWrap{Message: newMessage, Tokens: newTokens}
-		engine.contextTokens -= oldTokens - newTokens
+		messages[i] = messageWrap{Message: newMessage, Tokens: newTokens}
+		contextTokens -= oldTokens - newTokens
 	}
-	return nil
+
+	return StrategyResult{
+		Messages:      messages,
+		ContextTokens: contextTokens,
+	}, nil
 }
 
 func (s *OffloadStrategy) ShouldApply(ctx context.Context, engine *ContextEngine) bool {
