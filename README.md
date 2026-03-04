@@ -82,16 +82,17 @@
 *   **记忆事件系统**：在 TUI 中实时展示记忆更新状态
 *   **System Prompt 集成**：将记忆注入到 System Prompt 中供 LLM 使用
 
-### 第七章：Agentic RAG（检索增强生成）🚧
+### 第七章：Agentic RAG（检索增强生成）
 
-**目标**：让 Agent 能够基于语义理解上下文。
+**目标**：让 Agent 能够自主决策检索时机、查询内容和数量，实现真正的 Agentic RAG。
 
+*   **Agentic RAG 概念**：理解 Agent 如何自主决定何时检索、检索什么、检索多少
 *   **代码索引（Embedding）**：使用 Embedding 模型将代码片段向量化
-*   **向量存储**：选择向量数据库（Milvus/Qdrant/PGVector）并设计数据结构
-*   **文档切片策略**：如何将代码文件切分为合适的检索单元
-*   **召回（Recall）**：基于相似度的向量检索，多路召回融合
-*   **重排序（Rerank）**：使用 Cross-Encoder 或 LLM 对召回结果重新排序
-*   **Agentic RAG 流程**：检索 → 理解 → 工具调用的闭环优化
+*   **向量存储**：使用 pgvector 存储和检索向量，支持增量更新和去重
+*   **文档切片策略**：LineChunker 和 ParagraphChunker 两种切分方式
+*   **召回（Recall）**：基于向量相似度的语义检索
+*   **重排序（Rerank）**：使用 Rerank 模型对召回结果重新排序
+*   **搜索工具实现**：Semantic Search Tool 的完整实现
 
 ---
 
@@ -179,7 +180,7 @@ baby-agent/
 ├── ch04/           # ✅ 第四章：MCP 生态接入
 ├── ch05/           # ✅ 第五章：上下文工程
 ├── ch06/           # ✅ 第六章：记忆机制
-├── ch07/           # 🚧 第七章：Agentic RAG（规划中）
+├── ch07/           # ✅ 第七章：Agentic RAG
 ├── ch08/           # 🚧 第八章：沙盒与安全防御（规划中）
 ├── ch09/           # 🚧 第九章：Web 服务化与 SSE 流式传输（规划中）
 ├── ch10/           # 🚧 第十章：服务端状态管理（规划中）
@@ -215,6 +216,8 @@ go run ./ch05/tui
 # 第六章：记忆系统
 go run ./ch06/tui
 ```
+
+第七章是独立的索引和工具实现，可参考 `ch07/README.md` 中的使用示例。
 
 ---
 
