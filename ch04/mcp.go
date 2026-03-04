@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -27,9 +26,8 @@ type McpClient struct {
 }
 
 func initRunningVars() map[string]string {
-	cwd, _ := os.Getwd()
 	runningVars := map[string]string{
-		"${workspaceFolder}": cwd,
+		"${workspaceFolder}": shared.GetWorkspaceDir(),
 	}
 	return runningVars
 }
