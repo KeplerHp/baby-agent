@@ -1,0 +1,55 @@
+name: Test and Build Chapters
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Check format
+        run: |
+          fmt_output=$(gofmt -l .)
+          if [ -n "$fmt_output" ]; then
+            echo "The following files are not formatted:"
+            echo "$fmt_output"
+            exit 1
+          fi
+          echo "All files are properly formatted"
+
+  test-and-build:
+    name: Test and Build ${{ matrix.chapter }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chapter: [ch01, ch02, ch03, ch04, ch05, ch06, ch08, ch09]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Test
+        run: go test -v ./${{ matrix.chapter }}/...
+
+      - name: Build
+        run: go build -v ./${{ matrix.chapter }}/main
