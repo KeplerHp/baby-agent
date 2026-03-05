@@ -1,10 +1,16 @@
-# BabyAgent - 后端工程师的AI Agent 开发教程 (Go 语言版)
+# BabyAgent - 后端工程师的 AI Agent 教学项目 (Go 语言版)
 
 🏠 **项目地址：** https://github.com/baby-llm/baby-agent
 
-🚀 **从后端视角出发，用 Go 语言构建工业级 AI 智能体。**
+🚀 **从后端视角出发，用 Go 语言手写一遍 Agent 框架的关键原理。**
 
-本项目专为没有 LLM 背景但具备基础 Golang 经验的后端工程师设计。我们将跳过复杂的数学模型，直接进入工程实践，带你从零构建能够感知、决策并执行任务的 AI Agent。
+本项目专为没有 LLM 背景但具备基础 Golang 经验的后端工程师设计。我们将跳过复杂的数学推导，优先从工程实现理解核心概念：你会看到每一步为什么这么设计、替代方案是什么、以及它们在真实系统里会遇到哪些坑。
+
+> **重要说明（请先读）**
+>
+> - 本项目是**教学仓库**：目标是用可运行的代码把 Agent、Tool Calling、Agent Loop、MCP、Memory、RAG 等机制讲清楚。
+> - 本项目**不是**“开箱即用的生产框架”，也**不建议直接用于生产环境的二次开发**。
+> - 如果你希望落地到真实业务：这里更适合作为**原理参考 + 原型验证**的起点，你需要根据自己的场景补齐工程化能力与安全边界。
 
 ---
 
@@ -12,9 +18,9 @@
 
 *   **Language:** Go 1.24+
 *   **LLM Concepts:** Chat Completions API, SSE 流式传输, Function Calling, ReAct Agent Loop
-*   **Advanced AI:** Agentic RAG, Embedding, 向量检索, 重排序, 推理模型
-*   **System Design:** MCP 协议, 上下文工程, Memory 系统, Guardrails 安全防护, 技能系统（Skills）
-*   **Engineering:** Web 服务化, 会话管理, LLM 评测, 可观测性（Trace/Metrics/Log）
+*   **Advanced AI:** 上下文工程, Memory 系统, Agentic RAG, 技能系统（Skills）
+*   **System Design:** MCP 协议,  Guardrails 安全防护, Web 服务化
+*   **Engineering:** LLM 评测, 可观测性（Trace/Metrics/Log）
 
 ---
 
@@ -142,9 +148,9 @@
 *   **自动化评测指标**：响应时间、Token 消耗、准确率等
 *   **Prompt 优化量化**：对比不同 Prompt 版本的实际收益
 
-### 第十三章：生产环境保障（可观测性 Observability）🚧
+### 第十三章：生产化要点讲解（可观测性 Observability）🚧
 
-**目标**：让工业级 Agent 可控、可观测、可调试。
+**目标**：讲清楚把 Agent 推向生产时需要补齐的可观测性与工程化能力
 
 *   **分布式追踪（Trace）**：监控 Agent 复杂的推理和工具调用链路
 *   **结构化日志（Log）**：记录关键事件，便于问题排查
