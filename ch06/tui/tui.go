@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"context"
@@ -41,7 +41,7 @@ type activeStream struct {
 	memoryBody  int // 当前记忆更新 log entry 的索引
 }
 
-type model struct {
+type TuiViewModel struct {
 	modelName string
 	agent     *ch06.Agent
 
@@ -68,12 +68,12 @@ var (
 	contentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 )
 
-func newModel(agent *ch06.Agent, modelName string) *model {
+func NewModel(agent *ch06.Agent, modelName string) *TuiViewModel {
 	vp := viewport.New()
 	vp.SoftWrap = true
 	vp.MouseWheelEnabled = false
 
-	return &model{
+	return &TuiViewModel{
 		modelName:    modelName,
 		agent:        agent,
 		logs:         make([]LogEntry, 0),
@@ -81,7 +81,7 @@ func newModel(agent *ch06.Agent, modelName string) *model {
 	}
 }
 
-func (m *model) Init() tea.Cmd {
+func (m *TuiViewModel) Init() tea.Cmd {
 	return nil
 }
 
@@ -105,7 +105,7 @@ func waitStreamDone(ch <-chan error) tea.Cmd {
 	}
 }
 
-func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -135,7 +135,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		m.stopActiveStream()
@@ -181,7 +181,7 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) handleSubmit() (tea.Model, tea.Cmd) {
 	query := strings.TrimSpace(m.input)
 	if query == "" {
 		return m, nil
@@ -200,7 +200,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	return m.startNewTurn(query)
 }
 
-func (m *model) handleStreamEvent(event ch06.MessageVO) {
+func (m *TuiViewModel) handleStreamEvent(event ch06.MessageVO) {
 	if m.active == nil || m.state == stateAborting {
 		return
 	}
@@ -273,7 +273,7 @@ func (m *model) handleStreamEvent(event ch06.MessageVO) {
 	}
 }
 
-func (m *model) resetOutputSection() {
+func (m *TuiViewModel) resetOutputSection() {
 	if m.active == nil {
 		return
 	}
@@ -282,7 +282,7 @@ func (m *model) resetOutputSection() {
 	// 注意：不重置 policyBody 和 memoryBody，因为状态需要保留
 }
 
-func (m *model) handleStreamMsg(msg streamMsg) (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) handleStreamMsg(msg streamMsg) (tea.Model, tea.Cmd) {
 	if m.active == nil || m.active.events == nil {
 		return m, nil
 	}
@@ -291,7 +291,7 @@ func (m *model) handleStreamMsg(msg streamMsg) (tea.Model, tea.Cmd) {
 	return m, waitStreamEvent(m.active.events)
 }
 
-func (m *model) handleStreamDone(msg streamDoneMsg) (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) handleStreamDone(msg streamDoneMsg) (tea.Model, tea.Cmd) {
 	if m.active == nil {
 		m.state = stateIdle
 		return m, nil
@@ -314,7 +314,7 @@ func (m *model) handleStreamDone(msg streamDoneMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) startNewTurn(query string) (tea.Model, tea.Cmd) {
+func (m *TuiViewModel) startNewTurn(query string) (tea.Model, tea.Cmd) {
 	m.notice = ""
 	turnStart := len(m.logs)
 	m.logs = append(m.logs, NewContent(query))
@@ -344,14 +344,14 @@ func (m *model) startNewTurn(query string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(waitStreamEvent(streamC), waitStreamDone(doneC))
 }
 
-func (m *model) clearSession() {
+func (m *TuiViewModel) clearSession() {
 	m.agent.ResetSession()
 	m.logs = m.logs[:0]
 	m.notice = "会话已清空（仅保留 system prompt）。"
 	m.refreshLogsViewportContent()
 }
 
-func (m *model) abortCurrentTurn() {
+func (m *TuiViewModel) abortCurrentTurn() {
 	if m.state != stateRunning || m.active == nil || m.active.cancel == nil {
 		return
 	}
@@ -360,7 +360,7 @@ func (m *model) abortCurrentTurn() {
 	m.active.cancel()
 }
 
-func (m *model) rollbackTurn() {
+func (m *TuiViewModel) rollbackTurn() {
 	if m.active == nil {
 		return
 	}
@@ -370,7 +370,7 @@ func (m *model) rollbackTurn() {
 	m.refreshLogsViewportContent()
 }
 
-func (m *model) stopActiveStream() {
+func (m *TuiViewModel) stopActiveStream() {
 	if m.active == nil {
 		return
 	}
@@ -380,25 +380,25 @@ func (m *model) stopActiveStream() {
 	m.active = nil
 }
 
-func (m *model) scrollUp(n int) {
+func (m *TuiViewModel) scrollUp(n int) {
 	if n <= 0 {
 		return
 	}
 	m.logsViewport.ScrollUp(n)
 }
 
-func (m *model) scrollDown(n int) {
+func (m *TuiViewModel) scrollDown(n int) {
 	if n <= 0 {
 		return
 	}
 	m.logsViewport.ScrollDown(n)
 }
 
-func (m *model) logsHeaderHeight() int {
+func (m *TuiViewModel) logsHeaderHeight() int {
 	return 4
 }
 
-func (m *model) logsFooterHeight() int {
+func (m *TuiViewModel) logsFooterHeight() int {
 	h := 4
 	if m.state != stateIdle {
 		h++
@@ -409,7 +409,7 @@ func (m *model) logsFooterHeight() int {
 	return h
 }
 
-func (m *model) logsViewportHeight() int {
+func (m *TuiViewModel) logsViewportHeight() int {
 	if m.height <= 0 {
 		return 1
 	}
@@ -420,7 +420,7 @@ func (m *model) logsViewportHeight() int {
 	return h
 }
 
-func (m *model) syncLogsViewportSize() {
+func (m *TuiViewModel) syncLogsViewportSize() {
 	w := m.width
 	if w < 1 {
 		w = 1
@@ -429,7 +429,7 @@ func (m *model) syncLogsViewportSize() {
 	m.logsViewport.SetHeight(m.logsViewportHeight())
 }
 
-func (m *model) refreshLogsViewportContent() {
+func (m *TuiViewModel) refreshLogsViewportContent() {
 	atBottom := m.logsViewport.AtBottom()
 	offset := m.logsViewport.YOffset()
 	lines := make([]string, len(m.logs))
@@ -444,7 +444,7 @@ func (m *model) refreshLogsViewportContent() {
 	m.logsViewport.SetYOffset(offset)
 }
 
-func (m *model) View() tea.View {
+func (m *TuiViewModel) View() tea.View {
 	var b strings.Builder
 
 	m.syncLogsViewportSize()

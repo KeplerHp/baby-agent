@@ -216,22 +216,22 @@ go run ./ch01/main --stream -q "用 Go 语言写一个 Hello World"
 go run ./ch02/main -q "请读取 README.md 并总结项目目标"
 
 # 第三章：TUI 可视化
-go run ./ch03/tui
+go run ./ch03/main
 
 # 第四章：MCP 工具调用
-go run ./ch04/tui
+go run ./ch04/main
 
 # 第五章：上下文管理
-go run ./ch05/tui
+go run ./ch05/main
 
 # 第六章：记忆系统
-go run ./ch06/tui
+go run ./ch06/main
 
 # 第八章：完整 Agent（含 Docker 沙盒和工具确认）
-go run ./ch08/tui
+go run ./ch08/main
 
 # 第九章：技能系统
-go run ./ch09/tui
+go run ./ch09/main
 ```
 
 第七章是独立的索引和工具实现，可参考 `ch07/README.md` 中的使用示例。

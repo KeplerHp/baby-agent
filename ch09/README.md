@@ -232,7 +232,7 @@ EOF
 ### 运行 Agent
 
 ```bash
-go run ./ch09/tui
+go run ./ch09/main
 ```
 
 ### 对话示例

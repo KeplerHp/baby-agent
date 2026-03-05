@@ -157,7 +157,7 @@ if chunk.Content != nil {
 ### 3. TUI 只是"可视化外壳"
 
 
-在 `ch03/tui/main.go` 中，使用 Bubble Tea 搭建了一个轻量的 TUI：
+在 `ch03/tui/tui.go` 中，使用 Bubble Tea 搭建了一个轻量的 TUI：
 
 - 以流式方式展示推理、工具调用、错误和最终内容
 - 便于观察 Agent Loop 的执行轨迹
@@ -168,7 +168,7 @@ if chunk.Content != nil {
 
 这部分**不是本课程的核心内容**，也不需要深入理解 Bubble Tea 的内部机制。你只需要知道：TUI 的存在是为了让调试更直观，后续章节会频繁用到“可视化输出”。
 
-相关代码：`ch03/tui/main.go`
+相关代码：`ch03/tui/tui.go`
 
 
 ---
@@ -176,7 +176,7 @@ if chunk.Content != nil {
 ## 💻 代码结构速览
 
 - `ch03/agent.go`：增强后的 Agent Loop（流式 + reasoning 解析 + MCP 支持）
-- `ch03/tui/main.go`：Bubble Tea TUI 可视化界面
+- `ch03/tui/tui.go`：Bubble Tea TUI 可视化界面
 
 ---
 
@@ -185,7 +185,7 @@ if chunk.Content != nil {
 进入项目根目录，执行：
 
 ```bash
-go run ./ch03/tui
+go run ./ch03/main
 ```
 
 示例：

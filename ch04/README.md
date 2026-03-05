@@ -300,7 +300,7 @@ babyagent_mcp__{serverName}__{toolName}
 进入项目根目录，执行：
 
 ```bash
-go run ./ch04/tui
+go run ./ch04/main
 ```
 
 示例：

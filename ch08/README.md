@@ -142,7 +142,7 @@
 ### 运行 TUI
 
 ```bash
-go run ./ch08/tui
+go run ./ch08/main
 ```
 
 ### Docker 沙盒示例

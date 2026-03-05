@@ -15,6 +15,7 @@ import (
 	"babyagent/ch09/memory"
 	"babyagent/ch09/storage"
 	"babyagent/ch09/tool"
+	"babyagent/ch09/tui"
 	"babyagent/shared"
 )
 
@@ -82,7 +83,7 @@ func main() {
 	)
 
 	log.SetOutput(io.Discard)
-	p := tea.NewProgram(newModel(agent, appConf.LLMProviders.FrontModel.Model))
+	p := tea.NewProgram(tui.NewModel(agent, appConf.LLMProviders.FrontModel.Model))
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)
 	}

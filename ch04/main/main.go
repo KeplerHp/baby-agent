@@ -11,6 +11,7 @@ import (
 
 	"babyagent/ch04"
 	"babyagent/ch04/tool"
+	"babyagent/ch04/tui"
 	"babyagent/shared"
 )
 
@@ -42,7 +43,7 @@ func main() {
 	)
 
 	log.SetOutput(io.Discard)
-	p := tea.NewProgram(newModel(agent, modelConf.Model))
+	p := tea.NewProgram(tui.NewModel(agent, modelConf.Model))
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)
 	}

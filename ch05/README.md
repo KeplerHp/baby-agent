@@ -19,7 +19,7 @@
 
 ## 🛠 准备工作
 
-本章启动时会读取新的配置文件（见 `ch05/tui/main.go`）：
+本章启动时会读取新的配置文件（见 `ch05/main/main.go`）：
 
 1. `config.json`：应用模型配置（前台模型 + 后台摘要模型）
 2. `mcp-server.json`：MCP 服务配置（可选，读取失败仅打印日志）
@@ -228,7 +228,7 @@ type Summarizer interface {
 - `ch05/storage/storage.go`：存储接口（卸载策略依赖）
 - `ch05/tool/load_storage.go`：读取卸载内容的工具
 - `ch05/agent.go`：集成上下文引擎的 Agent
-- `ch05/tui/main.go`：策略装配与启动入口
+- `ch05/main/main.go`：策略装配与启动入口
 
 ---
 
@@ -237,7 +237,7 @@ type Summarizer interface {
 进入项目根目录，执行：
 
 ```bash
-go run ./ch05/tui
+go run ./ch05/main
 ```
 
 在 TUI 中可尝试：

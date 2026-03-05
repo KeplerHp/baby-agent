@@ -19,7 +19,7 @@
 
 ## 🛠 准备工作
 
-本章启动时会读取以下配置文件（见 `ch06/tui/main.go`）：
+本章启动时会读取以下配置文件（见 `ch06/main/main.go`）：
 
 1. `config.json`：应用模型配置（前台模型 + 后台记忆更新模型）
 2. `mcp-server.json`：MCP 服务配置（可选）
@@ -239,7 +239,7 @@ The memory of the current workspace is:
 进入项目根目录，执行：
 
 ```bash
-go run ./ch06/tui
+go run ./ch06/main
 ```
 
 在 TUI 中可尝试：
