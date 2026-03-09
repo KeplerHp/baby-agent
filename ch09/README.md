@@ -403,6 +403,13 @@ description: 技能描述，帮助 LLM 理解使用场景
 
 ---
 
+## ⚠️ 策略评测原则
+
+1. **策略必须先评测再上线**：技能选择、技能组合、技能注入等策略，必须先通过可复现实验验证收益与成本，不能仅凭人工判断当作优化直接上线
+2. **保留评测记录**：建议至少记录评测数据、对照基线和结论，避免后续重复决策或回归不自知
+
+---
+
 ## 📚 相关资源
 
 - [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
