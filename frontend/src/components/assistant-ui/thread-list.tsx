@@ -1,5 +1,6 @@
-import { MessageSquarePlus } from 'lucide-react'
+import { MessageSquarePlus, Pencil } from 'lucide-react'
 import {
+  useAui,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAuiState,
@@ -85,6 +86,9 @@ export default function AssistantThreadList() {
                   <ThreadListItemPrimitive.Title />
                 </ThreadListItemPrimitive.Trigger>
                 {threadListItem.remoteId ? (
+                  <RenameThreadButton currentTitle={threadListItem.title || 'Untitled'} />
+                ) : null}
+                {threadListItem.remoteId ? (
                   <ThreadListItemPrimitive.Delete
                     title="Delete Conversation"
                     style={{
@@ -107,5 +111,42 @@ export default function AssistantThreadList() {
         </ThreadListPrimitive.Items>
       </ThreadListPrimitive.Root>
     </aside>
+  )
+}
+
+function RenameThreadButton({ currentTitle }: { currentTitle: string }) {
+  const aui = useAui()
+
+  const handleRename = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const nextTitle = window.prompt('Rename conversation', currentTitle)
+    if (nextTitle === null) return
+
+    const normalized = nextTitle.trim()
+    if (!normalized || normalized === currentTitle) return
+
+    aui.threadListItem().rename(normalized)
+  }
+
+  return (
+    <button
+      type="button"
+      title="Rename Conversation"
+      onClick={handleRename}
+      style={{
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        color: 'var(--text-muted)',
+        padding: '6px 8px',
+        borderRadius: 6,
+        display: 'flex',
+        alignItems: 'center',
+      }}
+    >
+      <Pencil size={14} />
+    </button>
   )
 }
