@@ -14,17 +14,17 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantClasses: Record<ButtonVariant, string> = {
   default:
-    'bg-[var(--accent)] text-white hover:opacity-90',
+    'bg-[var(--accent)] text-white shadow-sm hover:brightness-110',
   outline:
-    'border border-[var(--border)] bg-[var(--panel-bg)] text-[var(--text)] hover:bg-white/5',
+    'border border-[var(--border)] bg-[var(--panel-bg)] text-[var(--text)] shadow-sm hover:bg-white/5',
   ghost:
     'text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text)]',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
-  default: 'h-9 px-4 py-2',
-  sm: 'h-8 rounded-md px-3 text-xs',
-  icon: 'h-8 w-8',
+  default: 'h-10 px-4 py-2',
+  sm: 'h-9 rounded-lg px-3 text-xs',
+  icon: 'h-9 w-9',
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -34,7 +34,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(
-          'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors',
+          'inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-light)] focus-visible:ring-offset-0',
           'disabled:pointer-events-none disabled:opacity-50',
           variantClasses[variant],
