@@ -10,7 +10,7 @@ import {
   type ConversationVO,
 } from './api'
 
-const USE_ASSISTANT_UI = false
+const USE_ASSISTANT_UI = true
 
 export default function App() {
   return USE_ASSISTANT_UI ? <AssistantUIApp /> : <LegacyApp />

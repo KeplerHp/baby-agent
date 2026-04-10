@@ -1,8 +1,7 @@
-import type {
-  ReasoningMessagePartProps,
-  ToolCallMessagePartProps,
-} from '@assistant-ui/react'
 import { MessagePrimitive, useAuiState } from '@assistant-ui/react'
+
+import ReasoningPanel from './reasoning-panel'
+import ToolCallCard from './tool-call-card'
 
 export default function AssistantThreadMessage() {
   const role = useAuiState((s) => s.message.role)
@@ -31,87 +30,13 @@ export default function AssistantThreadMessage() {
       >
         <MessagePrimitive.Parts
           components={{
-            Reasoning: ReasoningFallback,
+            Reasoning: ReasoningPanel,
             tools: {
-              Fallback: ToolCallFallback,
+              Fallback: ToolCallCard,
             },
           }}
         />
       </MessagePrimitive.Root>
     </div>
   )
-}
-
-function ReasoningFallback({ text }: ReasoningMessagePartProps) {
-  return (
-    <pre
-      style={{
-        margin: '0 0 8px',
-        padding: '8px 10px',
-        borderRadius: 8,
-        background: 'var(--reasoning-bg)',
-        color: 'var(--text-muted)',
-        fontSize: 12,
-        lineHeight: 1.5,
-        whiteSpace: 'pre-wrap',
-        overflowX: 'auto',
-      }}
-    >
-      {text}
-    </pre>
-  )
-}
-
-function ToolCallFallback({ toolName, argsText, result }: ToolCallMessagePartProps) {
-  return (
-    <div
-      style={{
-        marginBottom: 8,
-        padding: '8px 10px',
-        borderRadius: 8,
-        background: 'var(--tool-bg)',
-        border: '1px solid var(--border)',
-        fontFamily: 'monospace',
-        fontSize: 12,
-        lineHeight: 1.6,
-      }}
-    >
-      <div style={{ color: '#60a5fa', marginBottom: argsText ? 6 : 0 }}>
-        {toolName}
-      </div>
-      {argsText ? (
-        <pre
-          style={{
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            color: 'var(--text-muted)',
-          }}
-        >
-          {argsText}
-        </pre>
-      ) : null}
-      {result !== undefined ? (
-        <pre
-          style={{
-            margin: argsText ? '6px 0 0' : '0',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            color: '#4ade80',
-          }}
-        >
-          {formatToolResult(result)}
-        </pre>
-      ) : null}
-    </div>
-  )
-}
-
-function formatToolResult(result: unknown): string {
-  if (typeof result === 'string') return result
-  try {
-    return JSON.stringify(result, null, 2)
-  } catch {
-    return String(result)
-  }
 }
