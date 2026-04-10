@@ -1,10 +1,23 @@
 import { MessageSquarePlus, Pencil } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
   useAui,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAuiState,
 } from '@assistant-ui/react'
+
+import { Button } from '../ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../ui/dialog'
+import { Input } from '../ui/input'
 
 export default function AssistantThreadList() {
   const mainThreadId = useAuiState((s) => s.threads.mainThreadId)
@@ -116,37 +129,69 @@ export default function AssistantThreadList() {
 
 function RenameThreadButton({ currentTitle }: { currentTitle: string }) {
   const aui = useAui()
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState(currentTitle)
 
-  const handleRename = (event: React.MouseEvent<HTMLButtonElement>) => {
+  useEffect(() => {
+    if (!open) {
+      setTitle(currentTitle)
+    }
+  }, [currentTitle, open])
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     event.stopPropagation()
 
-    const nextTitle = window.prompt('Rename conversation', currentTitle)
-    if (nextTitle === null) return
-
-    const normalized = nextTitle.trim()
-    if (!normalized || normalized === currentTitle) return
+    const normalized = title.trim()
+    if (!normalized || normalized === currentTitle) {
+      setOpen(false)
+      return
+    }
 
     aui.threadListItem().rename(normalized)
+    setOpen(false)
   }
 
   return (
-    <button
-      type="button"
-      title="Rename Conversation"
-      onClick={handleRename}
-      style={{
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        color: 'var(--text-muted)',
-        padding: '6px 8px',
-        borderRadius: 6,
-        display: 'flex',
-        alignItems: 'center',
-      }}
-    >
-      <Pencil size={14} />
-    </button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title="Rename Conversation"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <Pencil size={14} />
+        </Button>
+      </DialogTrigger>
+      <DialogContent onClick={(event) => event.stopPropagation()}>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Rename conversation</DialogTitle>
+            <DialogDescription>
+              Update the thread title shown in the sidebar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            <Input
+              autoFocus
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
